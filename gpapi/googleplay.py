@@ -532,7 +532,8 @@ class GooglePlayAPI(object):
 
         if versionCode is None:
             # pick up latest version
-            versionCode = self.details(packageName).get('versionCode')
+            appDetails = self.details(packageName).get('details').get('appDetails')
+            versionCode = appDetails.get('versionCode')
 
         params = {'ot': str(offerType),
                   'doc': packageName,
@@ -553,12 +554,20 @@ class GooglePlayAPI(object):
             result = {}
             result['docId'] = packageName
             result['additionalData'] = []
+            result['splits'] = []
             downloadUrl = response.payload.deliveryResponse.appDeliveryData.downloadUrl
             cookie = response.payload.deliveryResponse.appDeliveryData.downloadAuthCookie[0]
             cookies = {
                 str(cookie.name): str(cookie.value)
             }
             result['file'] = self._deliver_data(downloadUrl, cookies)
+
+            for split in response.payload.deliveryResponse.appDeliveryData.split:
+                a = {}
+                a['name'] = split.name
+                a['file'] = self._deliver_data(split.downloadUrl, None)
+                result['splits'].append(a)
+
             if not expansion_files:
                 return result
             for obb in response.payload.deliveryResponse.appDeliveryData.additionalFile:
