@@ -219,8 +219,7 @@ class GooglePlayAPI(object):
             params['callerPkg'] = 'com.google.android.gms'
             headers = self.deviceBuilder.getAuthHeaders(self.gsfId)
             headers['app'] = 'com.google.android.gsm'
-            response = requests.post(AUTH_URL, data=params, verify=ssl_verify,
-                                     proxies=self.proxies_config)
+            response = requests.post(AUTH_URL, data=params, verify=ssl_verify, proxies=self.proxies_config)
             data = response.text.split()
             params = {}
             for d in data:
