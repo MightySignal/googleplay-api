@@ -130,13 +130,23 @@ class DeviceBuilder(object):
             headers['device'] = "{0:x}".format(gsfid)
         return headers
 
-    def getLoginParams(self, email, encrypted_passwd):
+    def getLoginParams(self, email, encrypted_passwd, sdk_version=17):
         return {"Email": email,
                 "EncryptedPasswd": encrypted_passwd,
                 "add_account": "1",
                 "accountType": ACCOUNT,
-                "google_play_services_version": self.device.get('gsf.version'),
                 "has_permission": "1",
+                "source": "android",
+                "device_country": self.locale[0:2],
+                "operatorCountry":self.locale[0:2],
+                "lang": self.locale,
+                "sdk_version": sdk_version
+                }
+
+    def getServiceLoginParams(self, email):
+        return {"Email": email,
+                "add_account": "1",
+                "google_play_services_version": self.device.get('gsf.version'),
                 "source": "android",
                 "device_country": self.locale[0:2],
                 "lang": self.locale,

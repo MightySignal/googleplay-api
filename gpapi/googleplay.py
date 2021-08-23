@@ -177,7 +177,7 @@ class GooglePlayAPI(object):
             headers["X-DFE-Cookie"] = self.dfeCookie
         return headers
 
-    def checkin(self, email, ac2dmToken):
+    def checkin(self, email, ac2dmToken=None):
         headers = self.getHeaders()
         headers["Content-Type"] = CONTENT_TYPE_PROTO
 
@@ -194,8 +194,9 @@ class GooglePlayAPI(object):
         # checkin again to upload gfsid
         request.id = response.androidId
         request.securityToken = response.securityToken
-        request.accountCookie.append("[" + email + "]")
-        request.accountCookie.append(ac2dmToken)
+        if ac2dmToken is not None:
+            request.accountCookie.append("[" + email + "]")
+            request.accountCookie.append(ac2dmToken)
         stringRequest = request.SerializeToString()
         self.session.post(CHECKIN_URL,
                       data=stringRequest,
@@ -234,18 +235,27 @@ class GooglePlayAPI(object):
         For the following logins you need to provide:
             * gsfId
             * authSubToken"""
+
         if email is not None and password is not None:
-            # First time setup, where we obtain an ac2dm token and
+            # First time setup, where we obtain an ac2dm(master) token and
             # upload device information
+
+            if gsfId is None:
+                self.gsfId = self.checkin(email)
+                #print(f"created gsfId: {self.gsfId}")
+            else:
+                self.gsfId = gsfId
 
             encryptedPass = self.encryptPassword(email, password).decode('utf-8')
             # AC2DM token
             params = self.deviceBuilder.getLoginParams(email, encryptedPass)
             params['service'] = 'ac2dm'
-            params['add_account'] = '1'
-            params['callerPkg'] = 'com.google.android.gms'
+            #params['callerPkg'] = 'com.google.android.gms'
             headers = self.deviceBuilder.getAuthHeaders(self.gsfId)
-            headers['app'] = 'com.google.android.gsm'
+            #headers['app'] = 'com.google.android.gsm'
+            if self.gsfId is not None:
+                headers["androidId"] = self.gsfId
+                
             response = self.session.post(AUTH_URL, data=params, verify=ssl_verify,
                                      proxies=self.proxies_config)
             data = response.text.split()
@@ -255,8 +265,10 @@ class GooglePlayAPI(object):
                     continue
                 k, v = d.split("=", 1)
                 params[k.strip().lower()] = v.strip()
-            if "auth" in params:
-                ac2dmToken = params["auth"]
+            #print(params)
+            if "token" in params:
+                ac2dm_token = params["token"]
+                #print(f"ac2dm(master) token: {ac2dm_token}")
             elif "error" in params:
                 if "NeedsBrowser" in params["error"]:
                     raise SecurityCheckError("Security check is needed, try to visit "
@@ -266,8 +278,16 @@ class GooglePlayAPI(object):
             else:
                 raise LoginError("Auth token not found.")
 
-            self.gsfId = self.checkin(email, ac2dmToken)
-            self.getAuthSubToken(email, encryptedPass)
+            # get authSubToken(service token)
+            params = self.deviceBuilder.getServiceLoginParams(email)
+            params['service'] = 'androidmarket'
+            params['app'] = 'com.android.vending'
+            headers = self.deviceBuilder.getAuthHeaders(self.gsfId)
+            headers['app'] = 'com.android.vending'
+            headers['get_accountid'] = '1'
+            second_round_token = self.getSecondRoundToken(ac2dm_token, params)
+            self.setAuthSubToken(second_round_token)
+            #self.getAuthSubToken(email, encryptedPass)
             self.uploadDeviceConfig()
         elif gsfId is not None and authSubToken is not None:
             # no need to initialize API
@@ -297,24 +317,24 @@ class GooglePlayAPI(object):
             k, v = d.split("=", 1)
             params[k.strip().lower()] = v.strip()
         if "token" in params:
-            master_token = params["token"]
-            second_round_token = self.getSecondRoundToken(master_token, requestParams)
+            ac2dm_token = params["token"]
+            second_round_token = self.getSecondRoundToken(ac2dm_token, requestParams)
             self.setAuthSubToken(second_round_token)
         elif "error" in params:
             raise LoginError("server says: " + params["error"])
         else:
             raise LoginError("auth token not found.")
 
-    def getSecondRoundToken(self, first_token, params):
+    def getSecondRoundToken(self, ac2dm_token, params):
         if self.gsfId is not None:
             params['androidId'] = "{0:x}".format(self.gsfId)
-        params['Token'] = first_token
+        params['Token'] = ac2dm_token
         params['check_email'] = '1'
         params['token_request_options'] = 'CAA4AQ=='
         params['system_partition'] = '1'
         params['_opt_is_called_from_account_manager'] = '1'
-        params.pop('Email')
-        params.pop('EncryptedPasswd')
+        if 'EncryptedPasswd' in params:
+            params.pop('EncryptedPasswd')
         headers = self.deviceBuilder.getAuthHeaders(self.gsfId)
         headers['app'] = 'com.android.vending'
         response = self.session.post(AUTH_URL,
